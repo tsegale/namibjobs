@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
 from .database import Base
 
 
@@ -17,3 +17,4 @@ class Job(Base):
     source_url = Column(String(500), unique=True, nullable=False)
     source_name = Column(String(100), nullable=False)
     date_scraped = Column(DateTime, default=datetime.utcnow, nullable=False)
+    embedding = Column(JSON)          # 384-dim float list from all-MiniLM-L6-v2
