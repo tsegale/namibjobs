@@ -9,7 +9,10 @@ import json
 import traceback
 from pathlib import Path
 
-# Make sure all local packages resolve
+# Force UTF-8 output on Windows
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 sys.path.append(str(Path(__file__).resolve().parent))
 
 PROFILE = (
@@ -19,20 +22,17 @@ PROFILE = (
 MIN_JOBS = 10
 TOP_N = 5
 
-PASS = "\033[92m✓\033[0m"
-FAIL = "\033[91m✗\033[0m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
+PASS  = "[OK]"
+FAIL  = "[FAIL]"
+SEP   = "-" * 60
 
 
 def section(title: str):
-    print(f"\n{BOLD}{'─' * 60}{RESET}")
-    print(f"{BOLD}  {title}{RESET}")
-    print(f"{BOLD}{'─' * 60}{RESET}")
+    print(f"\n{SEP}\n  {title}\n{SEP}")
 
 
-# ── Step 0: verify DB connection ─────────────────────────────────────────────
-section("Step 0 — Database connection")
+# ── Step 0: verify DB connection ──────────────────────────────────────────────
+section("Step 0 -- Database connection")
 try:
     from database.database import SessionLocal, engine
     from database.models import Job
@@ -46,8 +46,8 @@ except Exception:
     sys.exit(1)
 
 
-# ── Step 1: scrape ────────────────────────────────────────────────────────────
-section("Step 1 — Scraper")
+# ── Step 1: scrape ─────────────────────────────────────────────────────────────
+section("Step 1 -- Scraper")
 try:
     db = SessionLocal()
     before = db.query(Job).count()
@@ -65,22 +65,22 @@ try:
 
     if after < MIN_JOBS:
         print(
-            f"{FAIL} Only {after} jobs in DB — need at least {MIN_JOBS}.\n"
+            f"{FAIL} Only {after} jobs in DB -- need at least {MIN_JOBS}.\n"
             "  The scraper CSS selectors may need updating for the live site.\n"
             "  Open https://www.myjob.com.na in a browser, inspect a job card,\n"
             "  and update CARD_SELECTOR / TITLE_SELECTOR etc. in scraper/myjob_scraper.py."
         )
         sys.exit(1)
 
-    print(f"{PASS} Scrape complete — {after} jobs available.")
+    print(f"{PASS} Scrape complete -- {after} jobs available.")
 except Exception:
     print(f"{FAIL} Scraper raised an exception:")
     print(traceback.format_exc())
     sys.exit(1)
 
 
-# ── Step 2: NLP pipeline ─────────────────────────────────────────────────────
-section("Step 2 — NLP pipeline (skills + embeddings)")
+# ── Step 2: NLP pipeline ───────────────────────────────────────────────────────
+section("Step 2 -- NLP pipeline (skills + embeddings)")
 try:
     db = SessionLocal()
     pending = db.query(Job).filter(Job.embedding == None).count()  # noqa: E711
@@ -88,7 +88,7 @@ try:
     print(f"  Jobs without embeddings: {pending}")
 
     if pending == 0:
-        print(f"{PASS} All jobs already processed — skipping.")
+        print(f"{PASS} All jobs already processed -- skipping.")
     else:
         from nlp.process_jobs import run as run_nlp
         run_nlp()
@@ -100,22 +100,22 @@ try:
 
         if still_pending > 0:
             print(f"  {FAIL} {still_pending} jobs still have no embedding after processing.")
-        print(f"{PASS} NLP complete — {processed} jobs processed.")
+        print(f"{PASS} NLP complete -- {processed} jobs processed.")
 except Exception:
     print(f"{FAIL} NLP pipeline raised an exception:")
     print(traceback.format_exc())
     sys.exit(1)
 
 
-# ── Step 3: recommendations ──────────────────────────────────────────────────
-section("Step 3 — Recommendations")
+# ── Step 3: recommendations ────────────────────────────────────────────────────
+section("Step 3 -- Recommendations")
 try:
     db = SessionLocal()
     with_embeddings = db.query(Job).filter(Job.embedding != None).count()  # noqa: E711
     db.close()
 
     if with_embeddings == 0:
-        print(f"{FAIL} No jobs have embeddings — cannot run recommendations.")
+        print(f"{FAIL} No jobs have embeddings -- cannot run recommendations.")
         sys.exit(1)
 
     print(f"  Profile: \"{PROFILE}\"\n")
@@ -129,9 +129,9 @@ try:
 
     print(f"{PASS} Top {len(results)} matches:\n")
     for rank, job in enumerate(results, 1):
-        skills_preview = ", ".join(job["skills"][:4]) if job["skills"] else "—"
+        skills_preview = ", ".join(job["skills"][:4]) if job["skills"] else "N/A"
         print(
-            f"  {rank}. {BOLD}{job['match_score']}%{RESET}  {job['title']}\n"
+            f"  {rank}. {job['match_score']}%  {job['title']}\n"
             f"       Company  : {job['company']}\n"
             f"       Location : {job['location'] or 'N/A'}\n"
             f"       Type     : {job['job_type'] or 'N/A'}\n"
@@ -145,6 +145,6 @@ except Exception:
     sys.exit(1)
 
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# ── Summary ────────────────────────────────────────────────────────────────────
 section("Result")
 print(f"{PASS} All steps passed.\n")
