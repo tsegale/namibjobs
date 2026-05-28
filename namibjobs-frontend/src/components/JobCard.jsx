@@ -1,31 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-
-// Generates a consistent bg color per company name
-const AVATAR_COLORS = [
-  ['#D1FAE5', '#065F46'], // green
-  ['#DBEAFE', '#1E40AF'], // blue
-  ['#FEF3C7', '#92400E'], // amber
-  ['#FCE7F3', '#9D174D'], // pink
-  ['#EDE9FE', '#5B21B6'], // violet
-  ['#FFEDD5', '#9A3412'], // orange
-  ['#F0FDF4', '#14532D'], // emerald
-  ['#E0F2FE', '#075985'], // sky
-]
-
-function avatarColor(name = '') {
-  let hash = 0
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash)
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]
-}
-
-function initials(name = '') {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(w => w[0].toUpperCase())
-    .join('')
-}
+import { avatarColor, initials as getInitials } from '../utils/company'
 
 function LocationIcon() {
   return (
@@ -98,7 +72,7 @@ export default function JobCard({
           className="w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
           style={{ background: bg, color: fg }}
         >
-          {initials(company)}
+          {getInitials(company)}
         </div>
 
         {/* Title + meta */}

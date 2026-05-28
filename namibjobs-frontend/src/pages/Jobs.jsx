@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useJobs } from '../hooks/useJobs'
 import JobCard from '../components/JobCard'
 
@@ -92,10 +93,22 @@ function filterJobs(jobs, keyword, location) {
 
 export default function Jobs() {
   const { jobs, loading, error } = useJobs()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const companyParam = searchParams.get('company') ?? ''
 
   const [keyword,  setKeyword]  = useState('')
   const [location, setLocation] = useState('Windhoek')
   const [applied,  setApplied]  = useState({ keyword: '', location: 'Windhoek' })
+
+  // When navigated from Companies page, pre-fill keyword with company name
+  useEffect(() => {
+    if (companyParam) {
+      setKeyword(companyParam)
+      setApplied({ keyword: companyParam, location: '' })
+      setLocation('')
+    }
+  }, [companyParam])
 
   const filtered = useMemo(
     () => filterJobs(jobs, applied.keyword, applied.location),
@@ -197,17 +210,26 @@ export default function Jobs() {
 
         {/* ── Results header ────────────────────────────────────────── */}
         {!loading && !error && (
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-gray-500">
-              {filtered.length === jobs.length
-                ? `Showing all ${jobs.length} jobs`
-                : `${filtered.length} result${filtered.length !== 1 ? 's' : ''} found`}
-              {applied.location && (
-                <span className="ml-1">
-                  in <span className="font-medium text-gray-700">{applied.location}</span>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-sm text-gray-500">
+                {filtered.length === jobs.length
+                  ? `Showing all ${jobs.length} jobs`
+                  : `${filtered.length} result${filtered.length !== 1 ? 's' : ''} found`}
+                {applied.location && (
+                  <span className="ml-1">
+                    in <span className="font-medium text-gray-700">{applied.location}</span>
+                  </span>
+                )}
+              </p>
+              {companyParam && (
+                <span className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
+                  style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary-dark)' }}>
+                  {companyParam}
+                  <button onClick={() => setSearchParams({})} className="hover:opacity-70 leading-none">✕</button>
                 </span>
               )}
-            </p>
+            </div>
             {applied.keyword && (
               <button
                 onClick={() => { setKeyword(''); setApplied(a => ({ ...a, keyword: '' })) }}
