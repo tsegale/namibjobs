@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react'
 import api from '../api'
 
-export function useJobs(filters = {}) {
-  const [jobs, setJobs] = useState([])
+export function useJobs() {
+  const [jobs, setJobs]       = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [error, setError]     = useState(null)
 
   useEffect(() => {
     setLoading(true)
-    api.get('/jobs', { params: filters })
+    setError(null)
+    api.get('/jobs', { params: { limit: 200 } })
       .then(res => setJobs(res.data))
-      .catch(err => setError(err.message))
+      .catch(err => setError(err.message ?? 'Failed to fetch jobs'))
       .finally(() => setLoading(false))
-  }, [filters.location, filters.job_type])
+  }, [])
 
   return { jobs, loading, error }
 }
