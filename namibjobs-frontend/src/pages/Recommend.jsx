@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useRecommend } from '../hooks/useRecommend'
 import JobCard from '../components/JobCard'
 
@@ -58,8 +59,13 @@ function EmptyState() {
 }
 
 export default function Recommend() {
-  const [profile, setProfile] = useState('')
-  const { results, loading, error, recommend } = useRecommend()
+  const routerState = useLocation().state   // results passed from Profile page
+
+  const [profile, setProfile] = useState(routerState?.profileText ?? '')
+  const { results: hookResults, loading, error, recommend } = useRecommend()
+
+  // Use router-state results (from Profile page) if available, else hook results
+  const results = routerState?.results ?? hookResults
 
   const charCount = profile.trim().length
 
@@ -168,6 +174,15 @@ export default function Recommend() {
           <div className="rounded-xl p-4 text-sm text-red-600 bg-red-50 border border-red-100">
             <strong>Something went wrong.</strong> Make sure the backend is running on port 8000.
             <br /><span className="text-red-400">{error}</span>
+          </div>
+        )}
+
+        {/* From-profile banner */}
+        {!loading && routerState?.results && (
+          <div className="flex items-center gap-2 mb-5 px-4 py-3 rounded-xl text-sm font-medium"
+            style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary-dark)' }}>
+            <SparkleIcon />
+            Showing results based on your saved profile
           </div>
         )}
 
