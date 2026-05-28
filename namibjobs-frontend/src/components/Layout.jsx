@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 
 const NAV_LINKS = [
   { to: '/jobs',      label: 'Jobs',            end: false },
@@ -58,6 +58,7 @@ function mobileNavLinkClass({ isActive }) {
 
 export default function Layout() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const navigate = useNavigate()
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--color-surface)' }}>
@@ -96,6 +97,7 @@ export default function Layout() {
             <div className="flex items-center gap-3">
               {/* Avatar */}
               <button
+                onClick={() => navigate('/profile')}
                 className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white shadow-sm hover:opacity-90 transition-opacity cursor-pointer"
                 style={{ background: 'var(--color-primary-dark)' }}
                 title="My Profile"

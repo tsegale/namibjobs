@@ -124,7 +124,7 @@ export default function Companies() {
         {!loading && !error && companies.length > 0 && (
           <>
             {/* Stats strip */}
-            <div className="flex items-center gap-6 mb-6 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+            <div className="flex flex-wrap items-center gap-6 mb-6 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
               <div>
                 <span className="text-2xl font-bold text-gray-900">{companies.length}</span>
                 <span className="text-sm text-gray-400 ml-2">companies</span>

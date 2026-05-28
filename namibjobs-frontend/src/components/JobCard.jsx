@@ -1,4 +1,3 @@
-import { useNavigate } from 'react-router-dom'
 import { avatarColor, initials as getInitials } from '../utils/company'
 
 function LocationIcon() {
@@ -39,7 +38,6 @@ export default function JobCard({
   sourceUrl    = '#',
   onApply,
 }) {
-  const navigate = useNavigate()
   const [bg, fg] = avatarColor(company)
 
   const preview = description.length > DESCRIPTION_LIMIT
@@ -56,13 +54,7 @@ export default function JobCard({
   }
 
   return (
-    <article
-      className="card bg-white rounded-xl p-5 cursor-pointer flex flex-col gap-4"
-      onClick={() => navigate(`/jobs/${id}`)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={e => e.key === 'Enter' && navigate(`/jobs/${id}`)}
-    >
+    <article className="card bg-white rounded-xl p-5 flex flex-col gap-4">
 
       {/* ── Top row ───────────────────────────────────────────────────── */}
       <div className="flex items-start gap-3">

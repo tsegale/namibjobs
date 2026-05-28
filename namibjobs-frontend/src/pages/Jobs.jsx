@@ -186,7 +186,7 @@ export default function Jobs() {
 
         {/* ── Stats row ─────────────────────────────────────────────── */}
         {!loading && !error && (
-          <div className="grid grid-cols-3 gap-3 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
             <StatCard
               icon={<BriefcaseIcon />}
               value={jobs.length}
