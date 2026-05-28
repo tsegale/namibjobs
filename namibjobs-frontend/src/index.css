@@ -206,6 +206,23 @@ a:hover {
   margin-bottom: 1.5rem;
 }
 
+/* ── Print styles ─────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide everything, then reveal only the resume area */
+  body * { visibility: hidden; }
+  #resume-print-area,
+  #resume-print-area * { visibility: visible; }
+  #resume-print-area {
+    position: absolute;
+    inset: 0;
+    padding: 24px 40px;
+    background: #fff;
+  }
+  /* Clean up decorative elements for print */
+  #resume-print-area .no-print { display: none !important; }
+  @page { margin: 12mm 16mm; size: A4; }
+}
+
 /* ── Animations ───────────────────────────────────────────────────────────── */
 @keyframes fade-slide-in {
   from { opacity: 0; transform: translateY(8px); }
