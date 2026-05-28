@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 const NAV_LINKS = [
-  { to: '/jobs',      label: 'Jobs' },
-  { to: '/recommend', label: 'Recommendations' },
-  { to: '/companies', label: 'Companies' },
-  { to: '/profile',   label: 'My Profile' },
+  { to: '/jobs',      label: 'Jobs',            end: false },
+  { to: '/recommend', label: 'Recommendations', end: true  },
+  { to: '/companies', label: 'Companies',       end: true  },
+  { to: '/profile',   label: 'My Profile',      end: true  },
 ]
 
 const USER_INITIALS = 'JP'
@@ -85,8 +85,8 @@ export default function Layout() {
 
             {/* Desktop nav links */}
             <nav className="hidden md:flex items-center gap-8">
-              {NAV_LINKS.map(({ to, label }) => (
-                <NavLink key={to} to={to} className={navLinkClass}>
+              {NAV_LINKS.map(({ to, label, end }) => (
+                <NavLink key={to} to={to} end={end} className={navLinkClass}>
                   {label}
                 </NavLink>
               ))}
@@ -120,10 +120,11 @@ export default function Layout() {
         {menuOpen && (
           <div className="md:hidden border-t border-gray-100 bg-white px-4 pb-4 pt-2">
             <nav className="flex flex-col gap-1">
-              {NAV_LINKS.map(({ to, label }) => (
+              {NAV_LINKS.map(({ to, label, end }) => (
                 <NavLink
                   key={to}
                   to={to}
+                  end={end}
                   className={mobileNavLinkClass}
                   onClick={() => setMenuOpen(false)}
                 >
