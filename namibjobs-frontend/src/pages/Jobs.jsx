@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useJobs } from '../hooks/useJobs'
+import { useSavedJobs } from '../hooks/useSavedJobs'
+import { useApplications } from '../hooks/useApplications'
 import JobCard from '../components/JobCard'
 
 function SearchIcon() {
@@ -93,6 +95,8 @@ function filterJobs(jobs, keyword, location) {
 
 export default function Jobs() {
   const { jobs, loading, error } = useJobs()
+  const { isSaved, toggle } = useSavedJobs()
+  const { apply } = useApplications()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const companyParam = searchParams.get('company') ?? ''
@@ -279,6 +283,9 @@ export default function Jobs() {
                 sourceUrl={job.source_url}
                 isNew={i < 3}
                 isRemote={job.location?.toLowerCase().includes('remote')}
+                isSaved={isSaved(job.id)}
+                onBookmark={toggle}
+                onApply={apply}
               />
             ))}
           </div>

@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api'
+import { useSavedJobs } from '../hooks/useSavedJobs'
+import { useApplications } from '../hooks/useApplications'
+import JobCard from '../components/JobCard'
+import { avatarColor, initials as getInitials } from '../utils/company'
 
 const STORAGE_KEY = 'namibjobs_profile'
 
@@ -32,16 +36,16 @@ function hasContent(p) {
   return !!(p.fullName || p.email || p.skills.length > 0 || p.bio.trim())
 }
 
-function getInitials(name) {
+function nameInitials(name) {
   if (!name.trim()) return '?'
   return name.trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
-function UserIcon({ size = 22 }) {
+function UserIcon() {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
@@ -69,9 +73,9 @@ function MapPinIcon() {
   )
 }
 
-function BriefcaseIcon({ size = 15 }) {
+function BriefcaseIcon() {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="2" y="7" width="20" height="14" rx="2" />
       <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
@@ -104,6 +108,36 @@ function SparkleIcon() {
       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
+  )
+}
+
+function ArrowIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  )
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </svg>
+  )
+}
+
+function Spinner() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 gap-3">
+      <div className="w-9 h-9 rounded-full border-2 border-gray-200 animate-spin"
+        style={{ borderTopColor: 'var(--color-primary)' }} />
+      <p className="text-sm text-gray-400">Finding your matches…</p>
+    </div>
   )
 }
 
@@ -141,8 +175,7 @@ function SkillsInput({ skills, onChange }) {
           {skill}
           <button type="button"
             onClick={e => { e.stopPropagation(); onChange(skills.filter(s => s !== skill)) }}
-            className="hover:opacity-60 leading-none text-base"
-            aria-label={`Remove ${skill}`}>×</button>
+            className="hover:opacity-60 leading-none text-base" aria-label={`Remove ${skill}`}>×</button>
         </span>
       ))}
       <input ref={inputRef} type="text" value={input}
@@ -168,26 +201,50 @@ function Field({ label, hint, children }) {
   )
 }
 
-// ── Profile card (read-only view) ─────────────────────────────────────────────
+// ── Tab bar ───────────────────────────────────────────────────────────────────
 
-function ProfileCard({ profile, onEdit }) {
-  const initials = getInitials(profile.fullName)
+function TabBar({ tabs, active, onChange }) {
+  return (
+    <div className="flex overflow-x-auto border-b border-gray-200 bg-white rounded-t-2xl">
+      {tabs.map(tab => (
+        <button key={tab.id} onClick={() => onChange(tab.id)}
+          className="flex items-center gap-1.5 px-4 sm:px-5 py-3 text-sm font-medium whitespace-nowrap -mb-px border-b-2 transition-colors duration-150"
+          style={{
+            color: active === tab.id ? 'var(--color-primary-dark)' : 'var(--color-gray-500)',
+            borderBottomColor: active === tab.id ? 'var(--color-primary)' : 'transparent',
+          }}
+        >
+          {tab.label}
+          {tab.count > 0 && (
+            <span className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
+              style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary-dark)' }}>
+              {tab.count}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Overview tab ──────────────────────────────────────────────────────────────
+
+function OverviewTab({ profile, onEdit }) {
+  const initials = nameInitials(profile.fullName)
 
   const infoRows = [
-    profile.email      && { icon: <MailIcon />,       label: profile.email },
-    profile.location   && { icon: <MapPinIcon />,     label: `${profile.location}, Namibia` },
-    profile.experience && { icon: <BriefcaseIcon />,  label: `${profile.experience} year${profile.experience !== '1' ? 's' : ''} of experience` },
+    profile.email      && { icon: <MailIcon />,      label: profile.email },
+    profile.location   && { icon: <MapPinIcon />,    label: `${profile.location}, Namibia` },
+    profile.experience && { icon: <BriefcaseIcon />, label: `${profile.experience} year${profile.experience !== '1' ? 's' : ''} of experience` },
   ].filter(Boolean)
 
   return (
-    <div className="animate-fade-in bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 flex flex-col gap-6">
+    <div className="flex flex-col gap-6">
 
-      {/* ── Avatar + name ──────────────────────────────────────────── */}
+      {/* Avatar + name */}
       <div className="flex items-center gap-5">
-        <div
-          className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold text-white shrink-0 select-none"
-          style={{ background: 'var(--color-primary)' }}
-        >
+        <div className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold text-white shrink-0 select-none"
+          style={{ background: 'var(--color-primary)' }}>
           {initials}
         </div>
         <div>
@@ -202,7 +259,7 @@ function ProfileCard({ profile, onEdit }) {
         </div>
       </div>
 
-      {/* ── Info rows ──────────────────────────────────────────────── */}
+      {/* Info rows */}
       {infoRows.length > 0 && (
         <div className="flex flex-col gap-3 py-4 border-y border-gray-100">
           {infoRows.map((row, i) => (
@@ -214,16 +271,13 @@ function ProfileCard({ profile, onEdit }) {
         </div>
       )}
 
-      {/* ── Skills ─────────────────────────────────────────────────── */}
+      {/* Skills */}
       {profile.skills.length > 0 && (
         <div className="flex flex-col gap-2.5">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-gray-400)' }}>
-            Skills
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-gray-400)' }}>Skills</p>
           <div className="flex flex-wrap gap-2">
             {profile.skills.map(skill => (
-              <span key={skill}
-                className="text-xs font-medium px-3 py-1.5 rounded-full capitalize"
+              <span key={skill} className="text-xs font-medium px-3 py-1.5 rounded-full capitalize"
                 style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary-dark)' }}>
                 {skill}
               </span>
@@ -232,19 +286,23 @@ function ProfileCard({ profile, onEdit }) {
         </div>
       )}
 
-      {/* ── Bio ────────────────────────────────────────────────────── */}
+      {/* Bio */}
       {profile.bio.trim() && (
         <div className="flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-gray-400)' }}>
-            About
-          </p>
-          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-gray-600)' }}>
-            {profile.bio}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--color-gray-400)' }}>About</p>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--color-gray-600)' }}>{profile.bio}</p>
         </div>
       )}
 
-      {/* ── Edit button ────────────────────────────────────────────── */}
+      {/* Empty state */}
+      {!hasContent(profile) && (
+        <div className="text-center py-8 text-gray-400">
+          <p className="font-medium text-gray-600 mb-1">Your profile is empty</p>
+          <p className="text-sm">Click Edit Profile to fill in your details.</p>
+        </div>
+      )}
+
+      {/* Edit button */}
       <div className="pt-2 border-t border-gray-100">
         <button type="button" onClick={onEdit} className="btn-outline w-full justify-center">
           <PencilIcon /> Edit Profile
@@ -255,15 +313,240 @@ function ProfileCard({ profile, onEdit }) {
   )
 }
 
+// ── Saved Jobs tab ────────────────────────────────────────────────────────────
+
+function SavedJobsTab({ savedJobs, toggle, apply }) {
+  const navigate = useNavigate()
+
+  if (savedJobs.length === 0) {
+    return (
+      <div className="text-center py-14 flex flex-col items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+          style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary)' }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          </svg>
+        </div>
+        <div>
+          <p className="font-medium text-gray-700">No saved jobs yet</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Browse jobs and click the bookmark icon to save them.
+          </p>
+        </div>
+        <button onClick={() => navigate('/jobs')} className="btn-primary mt-2">
+          Browse Jobs <ArrowIcon />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {savedJobs.map(job => (
+        <JobCard
+          key={job.id}
+          id={job.id}
+          title={job.title}
+          company={job.company}
+          location={job.location}
+          description={job.description}
+          skills={job.skills ?? []}
+          jobType={job.job_type}
+          salary={job.salary}
+          sourceUrl={job.source_url}
+          matchScore={job.match_score ?? null}
+          isSaved={true}
+          onBookmark={toggle}
+          onApply={apply}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── Applications tab ──────────────────────────────────────────────────────────
+
+function ApplicationsTab({ applications }) {
+  if (applications.length === 0) {
+    return (
+      <div className="text-center py-14 flex flex-col items-center gap-3">
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+          style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary)' }}>
+          <BriefcaseIcon />
+        </div>
+        <div>
+          <p className="font-medium text-gray-700">No applications yet</p>
+          <p className="text-sm text-gray-400 mt-1">
+            Jobs you apply for will appear here.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {[...applications].reverse().map(app => {
+        const [bg, fg] = avatarColor(app.company ?? '')
+        const dateStr  = new Date(app.appliedAt).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        })
+        return (
+          <div key={app.id}
+            className="flex items-center gap-4 p-4 bg-white rounded-xl border border-gray-100 shadow-sm">
+
+            {/* Company avatar */}
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
+              style={{ background: bg, color: fg }}>
+              {getInitials(app.company ?? '')}
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-900 truncate">{app.title}</p>
+              <p className="text-xs text-gray-500 mt-0.5 truncate">{app.company}</p>
+              <p className="text-xs mt-1" style={{ color: 'var(--color-gray-400)' }}>
+                Applied {dateStr}
+              </p>
+            </div>
+
+            {/* Status badge */}
+            <span className="badge badge-green shrink-0">Applied</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Recommendations tab ───────────────────────────────────────────────────────
+
+function RecommendationsTab({ profile, isSaved, toggle, apply }) {
+  const [results,  setResults]  = useState(null)
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState(null)
+
+  const canRefresh = profile.skills.length > 0 || profile.bio.trim().length > 20
+
+  async function handleRefresh() {
+    setLoading(true)
+    setError(null)
+
+    const profileText = [
+      profile.fullName   && `My name is ${profile.fullName}.`,
+      profile.location   && `I am based in ${profile.location}, Namibia.`,
+      profile.experience && `I have ${profile.experience} year${profile.experience !== '1' ? 's' : ''} of experience.`,
+      profile.skills.length > 0 && `My skills include: ${profile.skills.join(', ')}.`,
+      profile.bio        && profile.bio,
+    ].filter(Boolean).join(' ')
+
+    try {
+      const res = await api.post('/recommend', { profile_text: profileText })
+      setResults(res.data)
+    } catch (err) {
+      setError(err.response?.data?.detail ?? err.message ?? 'Request failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const sorted = results ? [...results].sort((a, b) => b.match_score - a.match_score) : null
+
+  return (
+    <div className="flex flex-col gap-5">
+
+      {/* Header + button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+        <div>
+          <p className="text-sm font-semibold text-gray-800">AI-Powered Matches</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--color-gray-400)' }}>
+            Based on your profile skills and bio
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={loading || !canRefresh}
+          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshIcon />
+          {loading ? 'Searching…' : 'Refresh My Recommendations'}
+        </button>
+      </div>
+
+      {!canRefresh && (
+        <p className="text-xs text-center" style={{ color: 'var(--color-gray-400)' }}>
+          Add skills or a bio to your profile to enable recommendations.
+        </p>
+      )}
+
+      {loading && <Spinner />}
+
+      {error && (
+        <div className="rounded-xl p-4 text-sm text-red-600 bg-red-50 border border-red-100">
+          <strong>Something went wrong.</strong> Make sure the backend is running on port 8000.
+          <br /><span className="text-red-400">{error}</span>
+        </div>
+      )}
+
+      {!loading && sorted && sorted.length === 0 && (
+        <p className="text-center py-10 text-gray-400 text-sm">No matching jobs found. Try updating your profile.</p>
+      )}
+
+      {!loading && sorted && sorted.length > 0 && (
+        <>
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-700">
+              Top {sorted.length} matches
+            </p>
+            <span className="text-2xl font-bold" style={{ color: 'var(--color-primary)' }}>
+              {sorted[0].match_score}%
+              <span className="text-xs font-normal text-gray-400 ml-1">best match</span>
+            </span>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {sorted.map(job => (
+              <JobCard
+                key={job.id}
+                id={job.id}
+                title={job.title}
+                company={job.company}
+                location={job.location}
+                skills={job.skills ?? []}
+                jobType={job.job_type}
+                matchScore={job.match_score}
+                sourceUrl={job.source_url}
+                isSaved={isSaved(job.id)}
+                onBookmark={toggle}
+                onApply={apply}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {!loading && !sorted && canRefresh && (
+        <div className="text-center py-14 text-gray-400">
+          <p className="text-3xl mb-3">✦</p>
+          <p className="font-medium text-gray-600">Your matches will appear here</p>
+          <p className="text-sm mt-1">Click "Refresh My Recommendations" to get started</p>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function Profile() {
-  const navigate   = useNavigate()
-  const [profile,  setProfile]  = useState(loadProfile)
+  const [profile,   setProfile]   = useState(loadProfile)
   const [isEditing, setIsEditing] = useState(() => !hasContent(loadProfile()))
-  const [saved,    setSaved]    = useState(false)
-  const [finding,  setFinding]  = useState(false)
-  const [findError, setFindError] = useState(null)
+  const [activeTab, setActiveTab] = useState('overview')
+  const [saved,     setSaved]     = useState(false)
+
+  const { saved: savedJobs, toggle, isSaved } = useSavedJobs()
+  const { applications, apply }               = useApplications()
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profile))
@@ -280,32 +563,16 @@ export default function Profile() {
     setTimeout(() => {
       setSaved(false)
       setIsEditing(false)
+      setActiveTab('overview')
     }, 900)
   }
 
-  async function handleFindJobs() {
-    setFindError(null)
-    setFinding(true)
-
-    const profileText = [
-      profile.fullName   && `My name is ${profile.fullName}.`,
-      profile.location   && `I am based in ${profile.location}, Namibia.`,
-      profile.experience && `I have ${profile.experience} year${profile.experience !== '1' ? 's' : ''} of experience.`,
-      profile.skills.length > 0 && `My skills include: ${profile.skills.join(', ')}.`,
-      profile.bio        && profile.bio,
-    ].filter(Boolean).join(' ')
-
-    try {
-      const res = await api.post('/recommend', { profile_text: profileText })
-      navigate('/recommend', { state: { results: res.data, profileText } })
-    } catch (err) {
-      setFindError(err.response?.data?.detail ?? err.message ?? 'Request failed')
-    } finally {
-      setFinding(false)
-    }
-  }
-
-  const canFindJobs = profile.skills.length > 0 || profile.bio.trim().length > 20
+  const TABS = [
+    { id: 'overview',        label: 'Overview' },
+    { id: 'saved',           label: 'Saved Jobs',   count: savedJobs.length },
+    { id: 'applications',    label: 'Applications', count: applications.length },
+    { id: 'recommendations', label: 'Recommendations' },
+  ]
 
   return (
     <div>
@@ -319,15 +586,15 @@ export default function Profile() {
           </div>
           <p className="text-sm" style={{ color: 'var(--color-gray-400)' }}>
             {isEditing
-              ? 'Fill in your details and save — we\'ll use them to find your best job matches.'
-              : 'Your saved profile. Click Edit Profile to make changes.'}
+              ? 'Fill in your details — we\'ll use them to find your best job matches.'
+              : 'Your saved profile, bookmarked jobs, and applications.'}
           </p>
         </div>
       </section>
 
       {/* ── Body ────────────────────────────────────────────────────── */}
       <div className="page-container">
-        <div className="max-w-2xl mx-auto flex flex-col gap-4">
+        <div className="max-w-2xl mx-auto">
 
           {isEditing ? (
 
@@ -335,7 +602,6 @@ export default function Profile() {
             <form key="form" onSubmit={handleSave}
               className="animate-fade-in bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 flex flex-col gap-6">
 
-              {/* Personal info */}
               <div>
                 <h2 className="text-base font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">
                   Personal Information
@@ -351,9 +617,7 @@ export default function Profile() {
                   </Field>
                   <Field label="Location">
                     <select className="input bg-white" value={profile.location} onChange={set('location')}>
-                      {NAMIBIAN_CITIES.map(city => (
-                        <option key={city} value={city}>{city}</option>
-                      ))}
+                      {NAMIBIAN_CITIES.map(city => <option key={city} value={city}>{city}</option>)}
                     </select>
                   </Field>
                   <Field label="Years of Experience">
@@ -363,25 +627,16 @@ export default function Profile() {
                 </div>
               </div>
 
-              {/* Skills */}
               <div>
-                <h2 className="text-base font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">
-                  Skills
-                </h2>
+                <h2 className="text-base font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">Skills</h2>
                 <Field label="Your Skills"
                   hint="Type a skill and press Enter or comma to add it. Backspace removes the last one.">
-                  <SkillsInput
-                    skills={profile.skills}
-                    onChange={skills => setProfile(p => ({ ...p, skills }))}
-                  />
+                  <SkillsInput skills={profile.skills} onChange={skills => setProfile(p => ({ ...p, skills }))} />
                 </Field>
               </div>
 
-              {/* Bio */}
               <div>
-                <h2 className="text-base font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">
-                  About You
-                </h2>
+                <h2 className="text-base font-semibold text-gray-800 mb-4 pb-2 border-b border-gray-100">About You</h2>
                 <Field label="Bio / Summary"
                   hint="Describe your experience, goals, and what kind of role you're looking for.">
                   <textarea rows={5} className="input resize-none leading-relaxed"
@@ -390,9 +645,14 @@ export default function Profile() {
                 </Field>
               </div>
 
-              {/* Save action */}
-              <div className="pt-2 border-t border-gray-100">
-                <button type="submit" className="btn-primary w-full justify-center">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2 border-t border-gray-100">
+                {hasContent(profile) && (
+                  <button type="button" onClick={() => setIsEditing(false)}
+                    className="btn-outline flex-1 justify-center">
+                    Cancel
+                  </button>
+                )}
+                <button type="submit" className="btn-primary flex-1 justify-center">
                   {saved ? <><CheckIcon /> Saved!</> : <><CheckIcon /> Save Profile</>}
                 </button>
               </div>
@@ -401,41 +661,34 @@ export default function Profile() {
 
           ) : (
 
-            /* ── Profile card ──────────────────────────────────────── */
-            <ProfileCard key="card" profile={profile} onEdit={() => setIsEditing(true)} />
+            /* ── Tabbed view ────────────────────────────────────────── */
+            <div className="animate-fade-in flex flex-col rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+
+              <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
+
+              <div key={activeTab} className="animate-fade-in bg-white p-6 sm:p-8">
+                {activeTab === 'overview' && (
+                  <OverviewTab profile={profile} onEdit={() => setIsEditing(true)} />
+                )}
+                {activeTab === 'saved' && (
+                  <SavedJobsTab savedJobs={savedJobs} toggle={toggle} apply={apply} />
+                )}
+                {activeTab === 'applications' && (
+                  <ApplicationsTab applications={applications} />
+                )}
+                {activeTab === 'recommendations' && (
+                  <RecommendationsTab
+                    profile={profile}
+                    isSaved={isSaved}
+                    toggle={toggle}
+                    apply={apply}
+                  />
+                )}
+              </div>
+
+            </div>
 
           )}
-
-          {/* ── Find Jobs For Me — visible in both views ───────────── */}
-          <div className="flex flex-col gap-3">
-            <button
-              type="button"
-              disabled={finding || !canFindJobs}
-              onClick={handleFindJobs}
-              className="w-full flex items-center justify-center gap-2 font-medium text-sm
-                         py-3 px-5 rounded-xl border-none cursor-pointer transition-all duration-150
-                         disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                background: canFindJobs ? 'var(--color-primary-dark)' : 'var(--color-gray-300)',
-                color: '#fff',
-              }}
-            >
-              <SparkleIcon />
-              {finding ? 'Finding jobs…' : 'Find Jobs For Me'}
-            </button>
-
-            {findError && (
-              <p className="text-sm text-red-500 bg-red-50 rounded-lg px-4 py-3 border border-red-100">
-                {findError} — make sure the backend is running on port 8000.
-              </p>
-            )}
-
-            {!canFindJobs && (
-              <p className="text-xs text-center" style={{ color: 'var(--color-gray-400)' }}>
-                Add some skills or a bio to enable job matching.
-              </p>
-            )}
-          </div>
 
         </div>
       </div>

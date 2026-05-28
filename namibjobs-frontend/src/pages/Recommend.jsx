@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useRecommend } from '../hooks/useRecommend'
+import { useSavedJobs } from '../hooks/useSavedJobs'
+import { useApplications } from '../hooks/useApplications'
 import JobCard from '../components/JobCard'
 
 const PLACEHOLDER = `Example:
@@ -63,6 +65,8 @@ export default function Recommend() {
 
   const [profile, setProfile] = useState(routerState?.profileText ?? '')
   const { results: hookResults, loading, error, recommend } = useRecommend()
+  const { isSaved, toggle } = useSavedJobs()
+  const { apply } = useApplications()
 
   // Use router-state results (from Profile page) if available, else hook results
   const results = routerState?.results ?? hookResults
@@ -223,6 +227,9 @@ export default function Recommend() {
                 jobType={job.job_type}
                 matchScore={job.match_score}
                 sourceUrl={job.source_url}
+                isSaved={isSaved(job.id)}
+                onBookmark={toggle}
+                onApply={apply}
               />
             ))}
           </div>
