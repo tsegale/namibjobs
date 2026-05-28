@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import Footer from './Footer'
 
 const NAV_LINKS = [
   { to: '/jobs',      label: 'Jobs',            end: false },
@@ -157,16 +158,7 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* ── Footer ───────────────────────────────────────────────────────── */}
-      <footer className="bg-white border-t border-gray-100 py-6 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-gray-400">
-          <span>
-            © 2026 <span className="font-medium" style={{ color: 'var(--color-primary)' }}>NamibJobs</span>
-            {' '}— Connecting Namibia's talent
-          </span>
-          <span>Built with ♥ in Windhoek</span>
-        </div>
-      </footer>
+      <Footer />
 
     </div>
   )
