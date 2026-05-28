@@ -179,6 +179,7 @@ def scrape():
         http.close()
 
     log.info("Done. %d new jobs saved out of %d seen.", total_saved, total_seen)
+    return total_saved
 
 
 if __name__ == "__main__":
