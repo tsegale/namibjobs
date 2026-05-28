@@ -1,20 +1,21 @@
 import { Routes, Route } from 'react-router-dom'
-import Navbar from './components/Navbar'
+import Layout from './components/Layout'
 import Home from './pages/Home'
 import Jobs from './pages/Jobs'
+import Companies from './pages/Companies'
 import Recommend from './pages/Recommend'
+import Profile from './pages/Profile'
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <main className="max-w-5xl mx-auto px-4 py-8">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/jobs" element={<Jobs />} />
-          <Route path="/recommend" element={<Recommend />} />
-        </Routes>
-      </main>
-    </div>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route path="/"          element={<Home />} />
+        <Route path="/jobs"      element={<Jobs />} />
+        <Route path="/companies" element={<Companies />} />
+        <Route path="/recommend" element={<Recommend />} />
+        <Route path="/profile"   element={<Profile />} />
+      </Route>
+    </Routes>
   )
 }
