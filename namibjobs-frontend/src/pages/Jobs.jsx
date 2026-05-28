@@ -139,7 +139,8 @@ export default function Jobs() {
                 placeholder="Job title, skill, or keyword"
                 value={keyword}
                 onChange={e => setKeyword(e.target.value)}
-                className="input pl-9"
+                className="input"
+                style={{ paddingLeft: '2.25rem' }}
               />
             </div>
 
@@ -153,7 +154,8 @@ export default function Jobs() {
                 placeholder="Location"
                 value={location}
                 onChange={e => setLocation(e.target.value)}
-                className="input pl-9"
+                className="input"
+                style={{ paddingLeft: '2.25rem' }}
               />
             </div>
 
