@@ -1103,17 +1103,32 @@ def scrape_namra() -> int:
         if not soup:
             log.warning("[%s] Could not reach portal", SOURCE)
             return 0
-        # mcidirecthire lists jobs in .job-listing or table rows
-        for sel in [".job-listing", ".opportunity", "tr", "li"]:
+        page_text = soup.get_text(" ", strip=True).lower()
+        no_vacancy_phrases = ("no jobs available", "no current", "no opportunities",
+                              "no vacancies", "0 jobs", "currently no job")
+        if any(p in page_text for p in no_vacancy_phrases):
+            log.info("[%s] No current vacancies on portal", SOURCE)
+            return 0
+        nav_words = {"jobs", "home", "contact", "terms", "privacy", "manage",
+                     "manage my data", "contact us", "login", "log in",
+                     "register", "sign in", "sign up", "back to top"}
+        # Only use specific job-listing selectors — not "tr" (too broad, catches nav rows)
+        for sel in [".job-listing", ".opportunity", ".position", ".vacancy"]:
             items = soup.select(sel)
             for item in items:
                 link_tag = item.find("a", href=True)
                 if not link_tag:
                     continue
                 title = link_tag.get_text(strip=True)
-                if not title or len(title) < 4:
+                if not title or len(title) < 6:
+                    continue
+                if title.lower() in nav_words:
                     continue
                 href = link_tag["href"]
+                # Only follow links that look like job detail pages
+                if not any(kw in href.lower() for kw in
+                           ("job", "detail", "opportunit", "position", "vacancy")):
+                    continue
                 job_url = ("https://namra.mcidirecthire.com" + href
                            if href.startswith("/") else href)
                 if _save(db, title=title, company=SOURCE, location="Namibia",
@@ -1343,7 +1358,7 @@ def run_all_scrapers() -> dict:
     print(f"  {'NAMIBJOBS SCRAPE SUMMARY':^{col + 14}}")
     print(bar)
     for source, count in results.items():
-        status = "OK" if count > 0 else "0 / unreachable"
+        status = f"{count} new" if count > 0 else "0 new"
         print(f"  {source:<{col}} {count:>4}   [{status}]")
     print("-" * (col + 18))
     print(f"  {'TOTAL':<{col}} {total:>4}")
