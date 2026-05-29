@@ -25,11 +25,14 @@ import sys
 import json
 import time
 import logging
+import warnings
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+warnings.filterwarnings("ignore", category=InsecureRequestWarning)
 from bs4 import BeautifulSoup
 from sqlalchemy.exc import IntegrityError
 
@@ -55,7 +58,7 @@ HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
 }
@@ -64,11 +67,11 @@ HEADERS = {
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-def _get(url: str, session: requests.Session) -> BeautifulSoup | None:
+def _get(url: str, session: requests.Session, verify: bool = True) -> BeautifulSoup | None:
     try:
-        r = session.get(url, headers=HEADERS, timeout=15)
+        r = session.get(url, headers=HEADERS, timeout=15, verify=verify)
         r.raise_for_status()
-        return BeautifulSoup(r.content, "html.parser", from_encoding="utf-8")
+        return BeautifulSoup(r.content, "html.parser")
     except requests.RequestException as e:
         log.error("Fetch failed [%s]: %s", url, e)
         return None
@@ -203,6 +206,7 @@ def _scrape_company(
     desc_sels: list[str] | None = None,
     closing_sels: list[str] | None = None,
     use_js: bool = False,
+    verify: bool = True,
 ) -> int:
     card_sels    = card_sels    or _CARD_SELS
     title_sels   = title_sels   or _TITLE_SELS
@@ -210,7 +214,7 @@ def _scrape_company(
     desc_sels    = desc_sels    or _DESC_SELS
     closing_sels = closing_sels or _CLOSE_SELS
 
-    fetch = (lambda u, s: _get_or_js(u, s)) if use_js else _get
+    fetch = (lambda u, s: _get_or_js(u, s)) if use_js else (lambda u, s: _get(u, s, verify=verify))
     http  = requests.Session()
     db    = SessionLocal()
     saved = 0
@@ -408,9 +412,12 @@ def _jobs4na_company_from_title(title: str) -> str:
 def _jobs4na_parse_detail(content_text: str, company: str, article_url: str, db, source_name: str) -> int:
     """Parse individual job entries from a jobs4na detail page content block."""
     saved = 0
-    # Jobs are separated by this delimiter
-    DELIM = "More job details"
+    # Full delimiter used on jobs4na.com
+    DELIM = "More job details & Application >>>"
     chunks = content_text.split(DELIM)
+    if len(chunks) < 2:
+        # Try shorter fallback delimiter
+        chunks = content_text.split("More job details")
     if len(chunks) < 2:
         # No structured jobs — store whole article as one entry
         title = content_text[:120].split("\n")[0].strip()
@@ -431,7 +438,9 @@ def _jobs4na_parse_detail(content_text: str, company: str, article_url: str, db,
         # Skip lines that are obviously not a job title
         if len(job_title) < 4 or len(job_title) > 160:
             continue
-        if job_title.lower().startswith(("these", "click", "more", "advertisement", "share")):
+        if job_title.lower().startswith(("these", "click", "more", "advertisement", "share", "&", "application", ">>>")):
+            continue
+        if ">>>" in job_title or job_title.lower().startswith("swakop uranium is hiring"):
             continue
 
         # Extract closing date and description
@@ -610,11 +619,24 @@ def scrape_jobvacancies() -> int:
                 if not title or not url:
                     continue
 
-                # Skip obvious advice/guide articles
-                skip_kw = ("how to", "guide", "tips", "germany", "visa", "canada",
-                           "interview", "cv", "salary", "labour act", "learnerships")
+                # Skip advice/guide articles and non-Namibian jobs
+                skip_kw = ("how to", "guide", "tips", "germany", "visa", "canada", "canadian",
+                           "interview", "cv", "salary", "labour act", "learnerships",
+                           "usa", "united states", "us resort", "uk ", "australia",
+                           "seasonal harvest", "critical worker", "top 10", "in demand",
+                           "pathway to", "hidden", "mortenson", "dhl warehouse")
                 if any(kw in title.lower() for kw in skip_kw):
-                    log.debug("[%s] Skipping advice article: %s", SOURCE, title[:60])
+                    log.debug("[%s] Skipping advice/non-Namibia article: %s", SOURCE, title[:60])
+                    continue
+                # Only save if title sounds like a real job (has job-like keywords)
+                job_kw = ("officer", "manager", "analyst", "engineer", "coordinator",
+                          "assistant", "clerk", "technician", "specialist", "director",
+                          "administrator", "developer", "consultant", "driver", "supervisor",
+                          "accountant", "nurse", "doctor", "teacher", "lecturer",
+                          "mechanic", "plumber", "electrician", "intern", "graduate",
+                          "vacancies", "vacancy", "hiring", "recruitment", "position")
+                if not any(kw in title.lower() for kw in job_kw):
+                    log.debug("[%s] Skipping non-job article: %s", SOURCE, title[:60])
                     continue
 
                 company = _text(
@@ -780,6 +802,7 @@ def scrape_mtc() -> int:
     return _scrape_company(
         "MTC Namibia", "https://www.mtc.com.na",
         ["/corporate/careers", "/careers", "/vacancies", "/jobs"],
+        verify=False,
     )
 
 def scrape_bank_windhoek() -> int:
@@ -798,10 +821,11 @@ def scrape_nedbank() -> int:
     )
 
 def scrape_fnb() -> int:
+    # FNB uses an external portal page; the careers link is /fnb-careers/index.html
     return _scrape_company(
         "FNB Namibia", "https://www.fnbnamibia.com.na",
-        ["/careers", "/vacancies", "/about-fnb/careers", "/"],
-        use_js=True,
+        ["/fnb-careers/index.html", "/careers", "/vacancies", "/about-fnb/careers"],
+        use_js=False,
     )
 
 def scrape_ol_group() -> int:
@@ -814,6 +838,7 @@ def scrape_namib_mills() -> int:
     return _scrape_company(
         "Namib Mills", "https://www.namibmills.com.na",
         ["/vacancies", "/careers", "/about-us/vacancies", "/jobs", "/"],
+        verify=False,
     )
 
 def scrape_namdeb() -> int:
@@ -823,10 +848,47 @@ def scrape_namdeb() -> int:
     )
 
 def scrape_namport() -> int:
-    return _scrape_company(
-        "Namport", "https://www.namport.com.na",
-        ["/vacancies", "/careers", "/about-us/vacancies", "/corporate/careers", "/"],
-    )
+    SOURCE = "Namport"
+    BASE = "https://www.namport.com.na"
+    URL = f"{BASE}/careers/28/"
+    http = requests.Session()
+    db = SessionLocal()
+    saved = 0
+    try:
+        log.info("[%s] Starting scrape", SOURCE)
+        soup = _get(URL, http, verify=False)
+        if not soup:
+            log.warning("[%s] Could not reach site", SOURCE)
+            return 0
+        header_seen = False
+        for row in soup.select("table tr"):
+            cells = row.find_all(["td", "th"])
+            text = " ".join(c.get_text(strip=True) for c in cells)
+            if "Job Title" in text:
+                header_seen = True
+                continue
+            if header_seen and cells and len(cells) >= 3:
+                title = cells[0].get_text(strip=True)
+                deadline_text = cells[1].get_text(strip=True) if len(cells) > 1 else ""
+                link_tag = row.find("a", href=True)
+                link = (BASE + "/" + link_tag["href"].lstrip("/")) if link_tag else URL
+                if not title:
+                    continue
+                closing = None
+                m = re.search(r"(\d{2}-\w{3}-\d{4})", deadline_text)
+                if m:
+                    try:
+                        closing = datetime.strptime(m.group(1), "%d-%b-%Y").date()
+                    except ValueError:
+                        pass
+                if _save(db, title=title, company=SOURCE, location="Namibia",
+                         source_url=link, source_name=SOURCE):
+                    saved += 1
+                    log.info("[%s] Saved: %s", SOURCE, title)
+        log.info("[%s] Done — %d jobs saved", SOURCE, saved)
+        return saved
+    finally:
+        db.close()
 
 def scrape_gondwana() -> int:
     return _scrape_company(
@@ -835,16 +897,56 @@ def scrape_gondwana() -> int:
     )
 
 def scrape_telecom() -> int:
-    return _scrape_company(
-        "Telecom Namibia", "https://www.telecom.na",
-        ["/careers", "/vacancies", "/about-us/careers", "/jobs", "/"],
-        use_js=True,
-    )
+    SOURCE = "Telecom Namibia"
+    URL = "https://www.telecom.na/vacancies"
+    http = requests.Session()
+    db = SessionLocal()
+    saved = 0
+    try:
+        log.info("[%s] Starting scrape", SOURCE)
+        soup = _get(URL, http, verify=False)
+        if not soup:
+            log.warning("[%s] Could not reach site", SOURCE)
+            return 0
+        item = soup.select_one(".item-page") or soup.select_one("article") or soup.body
+        if not item:
+            log.warning("[%s] No content block found", SOURCE)
+            return 0
+        text = item.get_text("\n", strip=True)
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        # Each job is an ALL-CAPS title followed by "CLOSING DATE:" line
+        for i, line in enumerate(lines):
+            if not line.isupper() or len(line) < 5 or line.startswith("CLOSING"):
+                continue
+            if any(noise in line for noise in ["PRINT", "EMAIL", "VACANCIES", "MENU", "HOME"]):
+                continue
+            title = line
+            closing = None
+            for j in range(i + 1, min(i + 4, len(lines))):
+                m = re.search(r"(\d{1,2}\s+\w+\s+\d{4})", lines[j], re.IGNORECASE)
+                if m:
+                    for fmt in ["%d %B %Y", "%d %b %Y"]:
+                        try:
+                            closing = datetime.strptime(m.group(1), fmt).date()
+                            break
+                        except ValueError:
+                            pass
+                    break
+            source_url = f"{URL}#{_slug(title)}"
+            if _save(db, title=title, company=SOURCE, location="Namibia",
+                     source_url=source_url, source_name=SOURCE):
+                saved += 1
+                log.info("[%s] Saved: %s", SOURCE, title)
+        log.info("[%s] Done — %d jobs saved", SOURCE, saved)
+        return saved
+    finally:
+        db.close()
 
 def scrape_paratus() -> int:
     return _scrape_company(
         "Paratus Namibia", "https://www.paratus.com.na",
         ["/careers", "/vacancies", "/about/careers", "/about-us/vacancies", "/"],
+        verify=False,
     )
 
 
@@ -939,10 +1041,50 @@ def scrape_psc() -> int:
 
 
 def scrape_city_windhoek() -> int:
-    return _scrape_company(
-        "City of Windhoek", "https://www.windhoekcc.org.na",
-        ["/vacancies", "/careers", "/jobs", "/municipality/vacancies", "/"],
-    )
+    SOURCE = "City of Windhoek"
+    URL = "https://cityofwindhoek.erecruit.co/candidateapp/Jobs/Browse"
+    http = requests.Session()
+    db = SessionLocal()
+    saved = 0
+    try:
+        log.info("[%s] Starting scrape", SOURCE)
+        soup = _get(URL, http)
+        if not soup:
+            log.warning("[%s] Could not reach erecruit portal", SOURCE)
+            return 0
+        # eRecruit renders jobs in table rows or job-item divs
+        for row in soup.select("tr, .job-item, .vacancy-item"):
+            link_tag = row.find("a", href=True)
+            if not link_tag:
+                continue
+            title = link_tag.get_text(strip=True)
+            # Skip category rows like "Engineering (0)"
+            if not title or len(title) < 4 or re.search(r"\(\d+\)\s*$", title):
+                continue
+            href = link_tag["href"]
+            if "Browse" in href or "Category" in href:
+                continue
+            job_url = ("https://cityofwindhoek.erecruit.co" + href
+                       if href.startswith("/") else href)
+            closing = None
+            cells = row.find_all(["td", "th"])
+            for c in cells:
+                m = re.search(r"(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4})", c.get_text())
+                if m:
+                    for fmt in ["%Y-%m-%d", "%d/%m/%Y"]:
+                        try:
+                            closing = datetime.strptime(m.group(1), fmt).date()
+                            break
+                        except ValueError:
+                            pass
+            if _save(db, title=title, company=SOURCE, location="Windhoek, Namibia",
+                     source_url=job_url, source_name=SOURCE):
+                saved += 1
+                log.info("[%s] Saved: %s", SOURCE, title)
+        log.info("[%s] Done — %d jobs saved", SOURCE, saved)
+        return saved
+    finally:
+        db.close()
 
 
 def scrape_namra() -> int:
