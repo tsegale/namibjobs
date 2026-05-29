@@ -52,9 +52,10 @@ export default function JobCard({
 }) {
   const [bg, fg] = avatarColor(company)
 
-  const preview = description.length > DESCRIPTION_LIMIT
-    ? description.slice(0, DESCRIPTION_LIMIT).trimEnd() + '…'
-    : description
+  const desc    = description ?? ''
+  const preview = desc.length > DESCRIPTION_LIMIT
+    ? desc.slice(0, DESCRIPTION_LIMIT).trimEnd() + '…'
+    : desc
 
   const visibleSkills = skills.slice(0, MAX_SKILLS)
   const extraSkills   = skills.length - MAX_SKILLS
