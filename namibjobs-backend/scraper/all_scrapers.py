@@ -123,15 +123,14 @@ def _save(db, *, title: str, company: str, location: str | None = None,
 # ---------------------------------------------------------------------------
 
 def _get_selenium(url: str, wait_sec: int = 5) -> BeautifulSoup | None:
-    """Fetch a JS-rendered page via headless Chrome.
-    Returns None gracefully if selenium / ChromeDriver is not available.
-    Install: pip install selenium  (ChromeDriver must be in PATH).
-    """
+    """Fetch a JS-rendered page via headless Chrome (auto-manages ChromeDriver)."""
     try:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
-    except ImportError:
-        log.warning("selenium not installed — cannot JS-render %s", url)
+        from selenium.webdriver.chrome.service import Service
+        from webdriver_manager.chrome import ChromeDriverManager
+    except ImportError as e:
+        log.warning("selenium/webdriver-manager not installed — cannot JS-render %s", url)
         return None
 
     opts = Options()
@@ -139,11 +138,13 @@ def _get_selenium(url: str, wait_sec: int = 5) -> BeautifulSoup | None:
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1920,1080")
     opts.add_argument(f"user-agent={HEADERS['User-Agent']}")
 
     driver = None
     try:
-        driver = webdriver.Chrome(options=opts)
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=opts)
         driver.set_page_load_timeout(30)
         driver.get(url)
         time.sleep(wait_sec)
@@ -329,42 +330,44 @@ def scrape_namijob() -> int:
     try:
         log.info("[%s] Starting scrape", SOURCE)
         # Static fetch returns facets but no job rows (Solr AJAX). Try Selenium.
-        soup = _get_selenium(SEARCH, wait_sec=6) if True else None
+        soup = _get_selenium(SEARCH, wait_sec=6)
         if not soup:
-            log.warning("[%s] JS rendering unavailable — 0 results (install selenium + ChromeDriver)", SOURCE)
+            log.warning("[%s] JS rendering failed — 0 results", SOURCE)
             return 0
 
-        # Drupal views rows
-        rows = (
-            soup.select(".views-row") or
-            soup.select("article.node--type-job-offer") or
-            soup.select(".node--type-job-offer")
-        )
-        if not rows:
-            log.warning("[%s] Selenium loaded page but no job rows found — selectors may need updating", SOURCE)
+        # namijob.com card structure: .card.card-job > .card-job-detail > h3 > a
+        cards = soup.select(".card.card-job")
+        if not cards:
+            log.warning("[%s] Selenium loaded page but no job cards found", SOURCE)
             return 0
 
-        log.info("[%s] Found %d rows", SOURCE, len(rows))
+        log.info("[%s] Found %d cards", SOURCE, len(cards))
 
-        for row in rows:
+        for card in cards:
             try:
-                title_tag = (
-                    row.select_one("h2 a") or row.select_one("h3 a") or
-                    row.select_one(".field--name-title a") or row.select_one("a")
-                )
-                title   = _text(title_tag)
-                url     = _href(title_tag, BASE)
-                company = _text(
-                    row.select_one(".field--name-field-company") or
-                    row.select_one(".company")
-                ) or "Unknown"
-                location = _text(row.select_one(".field--name-field-location") or
-                                  row.select_one(".location")) or None
+                title_tag = card.select_one("h3 a") or card.select_one("h2 a")
+                title = _text(title_tag)
+                # prefer data-href on card, fallback to h3 a href
+                href = card.get("data-href") or (title_tag["href"] if title_tag and title_tag.has_attr("href") else None)
+                if href and href.startswith("/"):
+                    href = BASE + href
+                url = href
+
+                company_tag = card.select_one(".card-job-company, .company-name")
+                company = _text(company_tag) or "Unknown"
+
+                # location from list items
+                location = None
+                for li in card.select("ul li"):
+                    txt = li.get_text(strip=True)
+                    if "Location" in txt or "Namibia" in txt or any(c in txt for c in ["Windhoek","Namibia","Region"]):
+                        location = txt.split(":", 1)[-1].strip()
+                        break
 
                 if not title or not url:
                     continue
 
-                if _save(db, title=title, company=company, location=location,
+                if _save(db, title=title, company=company, location=location or "Namibia",
                          source_url=url, source_name=SOURCE):
                     saved += 1
                     log.info("[%s] Saved: %s @ %s", SOURCE, title, company)
@@ -1088,12 +1091,39 @@ def scrape_city_windhoek() -> int:
 
 
 def scrape_namra() -> int:
-    # NamRA is a SPA — needs Selenium
-    return _scrape_company(
-        "NamRA", "https://www.namra.org.na",
-        ["/careers", "/vacancies", "/about/careers", "/"],
-        use_js=True,
-    )
+    # NamRA uses mcidirecthire external portal — static HTML
+    SOURCE = "NamRA"
+    URL = "https://namra.mcidirecthire.com/external/currentopportunities"
+    http = requests.Session()
+    db = SessionLocal()
+    saved = 0
+    try:
+        log.info("[%s] Starting scrape", SOURCE)
+        soup = _get(URL, http)
+        if not soup:
+            log.warning("[%s] Could not reach portal", SOURCE)
+            return 0
+        # mcidirecthire lists jobs in .job-listing or table rows
+        for sel in [".job-listing", ".opportunity", "tr", "li"]:
+            items = soup.select(sel)
+            for item in items:
+                link_tag = item.find("a", href=True)
+                if not link_tag:
+                    continue
+                title = link_tag.get_text(strip=True)
+                if not title or len(title) < 4:
+                    continue
+                href = link_tag["href"]
+                job_url = ("https://namra.mcidirecthire.com" + href
+                           if href.startswith("/") else href)
+                if _save(db, title=title, company=SOURCE, location="Namibia",
+                         source_url=job_url, source_name=SOURCE):
+                    saved += 1
+                    log.info("[%s] Saved: %s", SOURCE, title)
+        log.info("[%s] Done — %d jobs saved", SOURCE, saved)
+        return saved
+    finally:
+        db.close()
 
 
 # ===========================================================================
