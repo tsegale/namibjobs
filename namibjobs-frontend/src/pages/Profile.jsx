@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import api from '../api'
 import { useSavedJobs } from '../hooks/useSavedJobs'
 import { useApplications } from '../hooks/useApplications'
 import JobCard from '../components/JobCard'
 import { avatarColor, initials as getInitials } from '../utils/company'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -29,14 +33,6 @@ const EMPTY_PROFILE = {
 
 const EMPTY_WORK = { company: '', title: '', duration: '', description: '' }
 const EMPTY_EDU  = { institution: '', degree: '', year: '' }
-
-const EXTRACT_PROMPT =
-  'Extract information from this resume and return ONLY a valid JSON object (no markdown, no explanation) with these exact fields: ' +
-  'full_name (string), email (string), location (string, city name only), years_of_experience (number), ' +
-  'skills (array of lowercase strings), bio (string, 2–3 sentence professional summary written in first person), ' +
-  'work_experience (array of objects each with company, title, duration, description), ' +
-  'education (array of objects each with institution, degree, year as string). ' +
-  'Use empty string, 0, or empty array if a field cannot be determined.'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -67,13 +63,157 @@ function buildProfileText(p) {
   ].filter(Boolean).join(' ')
 }
 
-function readAsBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload  = () => resolve(reader.result.split(',')[1])
-    reader.onerror = reject
-    reader.readAsDataURL(file)
+// ── PDF text extraction ───────────────────────────────────────────────────────
+
+async function extractPdfText(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const pages = []
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p)
+    const { items } = await page.getTextContent()
+    pages.push(items.map(i => i.str).join(' '))
+  }
+  return pages.join('\n')
+}
+
+// ── Client-side CV parser ─────────────────────────────────────────────────────
+
+function parseResumeText(text) {
+  // Email
+  const emailM = text.match(/[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/)
+  const email  = emailM ? emailM[0] : ''
+
+  // Phone
+  const phoneM =
+    text.match(/(\+?264[-.\s]?)?\(?\d{2,3}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}/) ||
+    text.match(/\b(\+\d{1,3}[\s\-]?)?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}\b/)
+  const phone = phoneM ? phoneM[0].trim() : ''
+
+  // Full name — first name-like line before email/phone
+  const topEnd = Math.min(
+    emailM && text.indexOf(emailM[0]) > 0 ? text.indexOf(emailM[0]) : 400,
+    phoneM && text.indexOf(phoneM[0]) > 0 ? text.indexOf(phoneM[0]) : 400,
+    400,
+  )
+  const topLines = text.slice(0, topEnd).split('\n').map(l => l.trim()).filter(Boolean)
+  const full_name = topLines.find(l =>
+    /^[A-Za-zÀ-ž][\wÀ-ž\s\-\.]{1,50}$/.test(l) &&
+    l.split(/\s+/).length >= 2 &&
+    l.split(/\s+/).length <= 4 &&
+    !/@/.test(l) && !/\d/.test(l)
+  ) ?? ''
+
+  // Location — Namibian cities
+  const CITIES = [
+    'Windhoek','Walvis Bay','Swakopmund','Oshakati','Rundu',
+    'Lüderitz','Luderitz','Keetmanshoop','Grootfontein','Otjiwarongo',
+    'Mariental','Tsumeb','Gobabis','Rehoboth','Ondangwa','Katima Mulilo',
+  ]
+  const location = CITIES.find(c => new RegExp('\\b' + c + '\\b', 'i').test(text)) ?? ''
+
+  // Years of experience
+  const expM =
+    text.match(/(\d+)\+?\s+years?(?:\s+of)?\s+(?:experience|exp|work)/i) ||
+    text.match(/experience[:\s]+(\d+)\+?\s+years?/i) ||
+    text.match(/(\d+)\s+years?\s+(?:professional|industry|working)/i)
+  const years_of_experience = expM ? parseInt(expM[1], 10) : 0
+
+  // Skills — 100+ keyword list
+  const SKILLS = [
+    // Languages
+    'python','javascript','typescript','java','c++','c#','php','ruby',
+    'swift','kotlin','r','matlab','sql','bash','go','rust','scala',
+    // Web / frameworks
+    'html','css','react','angular','vue','node.js','django','flask',
+    'fastapi','spring','laravel','express','graphql','rest api',
+    // Cloud / DevOps
+    'git','docker','kubernetes','linux','aws','azure','gcp',
+    'terraform','jenkins','ci/cd','devops',
+    // Databases
+    'postgresql','mysql','mongodb','oracle','redis','sqlite',
+    // Data / ML
+    'machine learning','deep learning','data science','data analysis',
+    'power bi','tableau','excel','tensorflow','pytorch','numpy','pandas',
+    'scikit-learn','spss','stata','statistics',
+    // Office / ERP
+    'microsoft office','word','powerpoint','outlook','sharepoint',
+    'sap','erp','sage','pastel','quickbooks','xero','jira','figma',
+    // Finance / accounting
+    'accounting','bookkeeping','financial reporting','auditing',
+    'ifrs','gaap','tax','payroll','budgeting','forecasting',
+    'cost accounting','accounts payable','accounts receivable',
+    'financial analysis','risk management','compliance','treasury',
+    'credit analysis',
+    // Business / soft skills
+    'project management','leadership','communication','teamwork',
+    'problem solving','time management','customer service','sales',
+    'marketing','negotiation','stakeholder management',
+    'strategic planning','business development','research',
+    'report writing','public relations','social media',
+    'content creation','digital marketing','seo','brand management',
+    // HR
+    'recruitment','hr management','labour law','employee relations',
+    'training','performance management','compensation','benefits',
+    // Supply chain
+    'procurement','supply chain','logistics',
+    // Engineering
+    'autocad','gis','solidworks','scada','surveying',
+    'civil engineering','electrical engineering','mechanical engineering',
+    'structural engineering','mining','geology',
+    'hse','health and safety','quality control','iso standards',
+    // Healthcare
+    'patient care','clinical assessment','first aid','pharmacy',
+    'laboratory testing','radiology','physiotherapy',
+    // Education
+    'teaching','curriculum development','academic writing','lecturing',
+    // Languages / misc
+    'afrikaans','oshiwambo','german','agile','scrum','kanban',
+    'wordpress','photoshop','illustrator','autocad',
+  ]
+  const skills = SKILLS.filter(skill => {
+    const esc = skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp('\\b' + esc + '\\b', 'i').test(text)
   })
+
+  // Education
+  const eduRe =
+    /(?:bachelor'?s?|master'?s?|diploma|certificate|degree|phd|ph\.d|doctorate|b\.?sc|m\.?sc|b\.?com|m\.?com|b\.?eng|b\.?tech|m\.?ba|llb|b\.a\.?|m\.a\.?)\s*(?:in|of)?\s*[\w\s]{2,50}/gi
+  const education = []
+  let eduM
+  while ((eduM = eduRe.exec(text)) !== null && education.length < 4) {
+    const degree  = eduM[0].replace(/\s+/g, ' ').trim().slice(0, 80)
+    const around  = text.slice(Math.max(0, eduM.index - 300), eduM.index + 300)
+    const instM   = around.match(
+      /(?:university|college|institute|school|academy|polytechnic|nust|unam)[^\n,;]{0,60}/i
+    )
+    const yearM   = around.match(/\b(19|20)\d{2}\b/)
+    education.push({
+      degree,
+      institution: instM ? instM[0].replace(/\s+/g, ' ').trim().slice(0, 80) : '',
+      year:        yearM ? yearM[0] : '',
+    })
+  }
+
+  // Work experience — anchored on date ranges
+  const dateRe =
+    /(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(20\d{2}|19\d{2})\s*[-–—]\s*(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(20\d{2}|19\d{2}|present|current|now)/gi
+  const work_experience = []
+  let workM
+  while ((workM = dateRe.exec(text)) !== null && work_experience.length < 5) {
+    const duration = workM[0].trim()
+    const before   = text.slice(Math.max(0, workM.index - 250), workM.index)
+    const after    = text.slice(workM.index + duration.length, workM.index + duration.length + 250)
+    const bLines   = before.split('\n').map(l => l.trim()).filter(Boolean)
+    const aLines   = after.split('\n').map(l => l.trim()).filter(Boolean)
+    work_experience.push({
+      title:       (bLines.at(-1) ?? '').slice(0, 80),
+      company:     (bLines.at(-2) ?? '').slice(0, 80),
+      duration,
+      description: aLines.slice(0, 2).join(' ').slice(0, 200),
+    })
+  }
+
+  return { full_name, email, phone, location, years_of_experience, skills, bio: '', work_experience, education }
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -234,57 +374,23 @@ function ResumeDropZone({ onParsed }) {
 
   async function handleParse() {
     if (!file) return
-    const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-    if (!apiKey || apiKey === 'your-api-key-here') {
-      setErr('Add your Anthropic API key to .env as VITE_ANTHROPIC_API_KEY to use this feature.')
-      return
-    }
     setParsing(true); setErr(null)
     try {
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-      let content
+      let text
 
       if (isPdf) {
-        const b64 = await readAsBase64(file)
-        content = [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
-          { type: 'text', text: EXTRACT_PROMPT },
-        ]
+        const arrayBuffer = await file.arrayBuffer()
+        text = await extractPdfText(arrayBuffer)
       } else {
-        const buf = await file.arrayBuffer()
+        const arrayBuffer = await file.arrayBuffer()
         const { default: mammoth } = await import('mammoth')
-        const { value: text } = await mammoth.extractRawText({ arrayBuffer: buf })
-        content = [
-          { type: 'document', source: { type: 'text', data: text } },
-          { type: 'text', text: EXTRACT_PROMPT },
-        ]
+        const { value } = await mammoth.extractRawText({ arrayBuffer })
+        text = value
       }
 
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          messages: [{ role: 'user', content }],
-        }),
-      })
-
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
-        throw new Error(e.error?.message ?? `API error ${res.status}`)
-      }
-
-      const data   = await res.json()
-      const raw    = data.content[0].text.trim()
-      const jsonStr = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
-      const parsed = JSON.parse(jsonStr)
-
+      if (!text?.trim()) throw new Error('Could not extract text from this file.')
+      const parsed = parseResumeText(text)
       onParsed(parsed)
       setOk(true)
     } catch (e) {
@@ -345,7 +451,7 @@ function ResumeDropZone({ onParsed }) {
       {ok && (
         <div className="flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg"
           style={{ background: 'var(--color-primary-pale)', color: 'var(--color-primary-dark)' }}>
-          <CheckIcon /> Profile built from your resume — review and save below.
+          <CheckIcon /> Profile built from your CV — review and save below.
         </div>
       )}
 
