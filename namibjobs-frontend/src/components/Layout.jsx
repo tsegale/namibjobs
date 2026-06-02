@@ -60,7 +60,7 @@ export default function Layout() {
 
             {/* Logo */}
             <NavLink to="/" className="hover:opacity-80 transition-opacity">
-              <img src={logo} alt="NamibJobs" className="h-9 w-auto" />
+              <img src={logo} alt="NamibJobs" className="h-12 w-auto" />
             </NavLink>
 
             {/* Desktop nav links */}

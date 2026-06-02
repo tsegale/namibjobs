@@ -1,15 +1,5 @@
 import { Link } from 'react-router-dom'
-
-function BriefcaseIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-      <path d="M2 12h20" />
-    </svg>
-  )
-}
+import logo from '../assets/namibjobslogo.png'
 
 function SparkleIcon() {
   return (
@@ -59,25 +49,9 @@ export default function Footer() {
 
           {/* Brand column */}
           <div className="sm:col-span-2 lg:col-span-1 flex flex-col gap-3">
-            <Link
-              to="/"
-              className="flex items-center gap-2 w-fit"
-              style={{ color: 'var(--color-primary)' }}
-            >
-              <span
-                className="flex items-center justify-center w-8 h-8 rounded-lg text-white shrink-0"
-                style={{ background: 'var(--color-primary)' }}
-              >
-                <BriefcaseIcon />
-              </span>
-              <span className="text-lg font-bold tracking-tight" style={{ color: 'var(--color-gray-900)' }}>
-                Namib<span style={{ color: 'var(--color-primary)' }}>Jobs</span>
-              </span>
+            <Link to="/" className="w-fit hover:opacity-80 transition-opacity">
+              <img src={logo} alt="NamibJobs" className="h-12 w-auto" />
             </Link>
-
-            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-gray-500)' }}>
-              Opportunities, closer to home.
-            </p>
 
             <p className="text-xs mt-1" style={{ color: 'var(--color-gray-400)' }}>
               Connecting Namibia's talent with<br />the country's best employers.
