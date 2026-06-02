@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import Footer from './Footer'
+import logo from '../assets/namibjobslogo.png'
 
 const NAV_LINKS = [
   { to: '/jobs',      label: 'Jobs',            end: false },
@@ -10,18 +11,6 @@ const NAV_LINKS = [
 ]
 
 const USER_INITIALS = 'JP'
-
-function BriefcaseIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-      <line x1="12" y1="12" x2="12" y2="12" />
-      <path d="M2 12h20" />
-    </svg>
-  )
-}
 
 function MenuIcon() {
   return (
@@ -70,19 +59,8 @@ export default function Layout() {
           <div className="flex items-center justify-between h-16">
 
             {/* Logo */}
-            <NavLink
-              to="/"
-              className="flex items-center gap-2 text-primary hover:opacity-80 transition-opacity"
-              style={{ color: 'var(--color-primary)' }}
-            >
-              <span className="flex items-center justify-center w-8 h-8 rounded-lg text-white"
-                style={{ background: 'var(--color-primary)' }}>
-                <BriefcaseIcon />
-              </span>
-              <span className="text-lg font-bold tracking-tight"
-                style={{ color: 'var(--color-gray-900)' }}>
-                Namib<span style={{ color: 'var(--color-primary)' }}>Jobs</span>
-              </span>
+            <NavLink to="/" className="hover:opacity-80 transition-opacity">
+              <img src={logo} alt="NamibJobs" className="h-9 w-auto" />
             </NavLink>
 
             {/* Desktop nav links */}
